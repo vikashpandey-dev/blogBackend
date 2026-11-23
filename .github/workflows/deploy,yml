@@ -1,5 +1,5 @@
 
-name: Deploy Node TypeScript API to AWS EC2
+name: Deploy Blog API to AWS EC2
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: node-api-production
+  group: blog-api-production
   cancel-in-progress: true
 
 jobs:
@@ -20,74 +20,87 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # 3. Install dependencies on GitHub Runner
       - name: Install Dependencies
         run: npm ci
 
+      # 4. Build TypeScript
       - name: Build TypeScript
         run: npm run build
 
+      # 5. Configure SSH
       - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
-      - name: Create deployment directory
+      # 6. Create deployment directory on EC2
+      - name: Create Deployment Directory
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" \
-            "mkdir -p /var/www/node-api/dist"
+            "mkdir -p /var/www/Blog_api/dist"
 
-      - name: Upload compiled application
+      # 7. Upload compiled TypeScript files
+      - name: Upload Build Files
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/deploy_key" \
-            dist/ "$EC2_USER@$EC2_HOST:/var/www/node-api/dist/"
+            dist/ "$EC2_USER@$EC2_HOST:/var/www/Blog_api/dist/"
 
-      - name: Upload package files
+      # 8. Upload package files
+      - name: Upload Package Files
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           scp -i ~/.ssh/deploy_key \
-            package.json package-lock.json ecosystem.config.cjs \
-            "$EC2_USER@$EC2_HOST:/var/www/node-api/"
+            package.json package-lock.json \
+            "$EC2_USER@$EC2_HOST:/var/www/Blog_api/"
 
-      - name: Install production dependencies and restart PM2
+      # 9. Install production dependencies and restart app
+      - name: Install and Restart Application
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" << 'EOF'
             set -e
-            cd /var/www/node-api
+
+            cd /var/www/Blog_api
 
             npm ci --omit=dev
 
-            if pm2 describe node-api >/dev/null 2>&1; then
-              pm2 restart node-api --update-env
+            if pm2 describe Blog_api >/dev/null 2>&1; then
+              pm2 restart Blog_api --update-env
             else
-              pm2 start ecosystem.config.cjs
+              pm2 start npm --name Blog_api -- start
             fi
 
             pm2 save
           EOF
+
+      # 10. Deployment success
+      - name: Deployment Complete
+        run: echo "Blog API deployed successfully!"
