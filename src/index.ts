@@ -10,7 +10,7 @@ type User = { id: number; name: string; email: string };
 let users: User[] = [];
 let nextId = 1;
 
-app.get('/hi', (_req: Request, res: Response) => {
+app.get('/h', (_req: Request, res: Response) => {
   res.json({ message: 'Simple TypeScript CRUD API is running' });
 });
 
